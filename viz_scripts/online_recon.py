@@ -309,9 +309,11 @@ def visualize(scene_path, cfg):
             cols = o3d.utility.Vector3dVector(scene_data['colors_precomp'].contiguous().double().cpu().numpy())
         elif cfg['render_mode'] == 'semantic_color':
             seg, depth, sil = render(view_w2c, k, scene_semantic_data, scene_depth_data, cfg)
+            viz_seg = (seg + 1) / 2.0
+            viz_seg = torch.clip(viz_seg, 0, 1)
             if cfg['show_sil']:
                 seg = (1-sil).repeat(3, 1, 1)
-            pts, cols = rgbd2pcd(seg, depth, view_w2c, k, cfg)
+            pts, cols = rgbd2pcd(viz_seg, depth, view_w2c, k, cfg)
         else:
             im, depth, sil = render(view_w2c, k, scene_data, scene_depth_data, cfg)
             if cfg['show_sil']:
