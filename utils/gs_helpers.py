@@ -413,11 +413,15 @@ def plot_rgbd_silhouette(color, depth, rastered_color, rastered_depth, presence_
     axs[1, 2].set_title("Diff Depth RMSE")
 
     if seg is not None:
-        rastered_seg = recolor_semantic_img(rastered_seg, seg)
+        # rastered_seg = recolor_semantic_img(rastered_seg, seg)
         miou = evaluate_miou(rastered_seg, seg)
-        axs[0, 3].imshow(seg.cpu().permute(1, 2, 0))
+        viz_rastered_seg = (rastered_seg + 1) / 2.0
+        viz_seg = (seg + 1) / 2.0
+        viz_rastered_seg = torch.clip(viz_rastered_seg, 0, 1)
+        viz_seg = torch.clip(viz_seg, 0, 1)
+        axs[0, 3].imshow(viz_seg.cpu().permute(1, 2, 0))
         axs[0, 3].set_title("Ground Truth Semantic Map")
-        axs[1, 3].imshow(rastered_seg.cpu().permute(1, 2, 0))
+        axs[1, 3].imshow(viz_rastered_seg.cpu().permute(1, 2, 0))
         axs[1, 3].set_title("Rasterized Semantic Map, IOU: {:.4f}".format(miou))
 
     for ax in axs.flatten():
@@ -526,7 +530,7 @@ def eval(dataset, final_params, num_frames, eval_dir, sil_thres, mapping_iters, 
         if load_semantics:
             color, depth, intrinsics, pose, semantic_id, semantic_color = dataset[time_idx]
             semantic_id = semantic_id.permute(2, 0, 1) # (H, W, 1) -> (1, H, W)
-            semantic_color = semantic_color.permute(2, 0, 1) / 255 # (H, W, C) -> (C, H, W)
+            semantic_color = semantic_color.permute(2, 0, 1) # (H, W, C) -> (C, H, W)
         else:
             color, depth, intrinsics, pose = dataset[time_idx]
         gt_w2c = torch.linalg.inv(pose)

@@ -715,7 +715,7 @@ def rgbd_slam(config: dict):
 
                 if load_semantics:
                     semantic_id = semantic_id.permute(2, 0, 1)
-                    semantic_color = semantic_color.permute(2, 0, 1) / 255
+                    semantic_color = semantic_color.permute(2, 0, 1)
                     curr_keyframe['semantic_id'] = semantic_id
                     curr_keyframe['semantic_color'] = semantic_color
                 # Add to keyframe list
@@ -745,7 +745,7 @@ def rgbd_slam(config: dict):
         
         if load_semantics:
             semantic_id = semantic_id.permute(2, 0, 1)
-            semantic_color = semantic_color.permute(2, 0, 1) / 255
+            semantic_color = semantic_color.permute(2, 0, 1)
             curr_data['semantic_id'] = semantic_id
             curr_data['semantic_color'] = semantic_color
         

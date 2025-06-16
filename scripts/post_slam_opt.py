@@ -85,7 +85,7 @@ def initialize_first_timestep_from_ckpt(ckpt_path, dataset, num_frames, lrs_dict
     if load_semantics:
         color, depth, intrinsics, pose, semantic_id, semantic_color = dataset[0]
         semantic_id = color.permute(2, 0, 1) # (H, W, 1) -> (1, H, W)
-        semantic_color = semantic_color.permute(2, 0, 1) / 255 # (H, W, C) -> (C, H, W)
+        semantic_color = semantic_color.permute(2, 0, 1) # (H, W, C) -> (C, H, W)
         params_opt_exclude.add("semantic_ids")
     else:
         color, depth, intrinsics, pose = dataset[0]
@@ -342,11 +342,11 @@ def rgbd_slam(config: dict):
     depth_all_frames_map = []
     gt_w2c_all_frames_map = []
     gs_cams_all_frames_map = []
-    for time_idx in range(num_frames):
+    for time_idx in tqdm(range(num_frames)):
         if load_semantics:
             color, depth, _, gt_pose, semantic_id, semantic_color = mapping_dataset[time_idx]
             semantic_id = semantic_id.permute(2, 0, 1)
-            semantic_color = semantic_color.permute(2, 0, 1) / 255
+            semantic_color = semantic_color.permute(2, 0, 1)
             semantic_id_all_frames_map.append(semantic_id)
             semantic_color_all_frames_map.append(semantic_color)
         else:
@@ -365,110 +365,109 @@ def rgbd_slam(config: dict):
                               gt_w2c.detach().cpu().numpy(),
                               device=device)
         gs_cams_all_frames_map.append(gs_cam)
-
     # Iterate over Scan
-    for time_idx in tqdm(range(num_frames)):
+    # for time_idx in tqdm(range(num_frames)):
         # Optimization Iterations
-        num_iters_mapping = config['train']['num_iters_mapping']
+    num_iters_mapping = config['train']['num_iters_mapping']
 
-        # Initialize current frame data
-        iter_time_idx = time_idx
-        color = color_all_frames_map[iter_time_idx]
-        depth = depth_all_frames_map[iter_time_idx]
-        curr_gt_w2c = gt_w2c_all_frames_map[:iter_time_idx+1]
-        curr_data = {'cam': cam, 'im': color, 'depth': depth, 'id': iter_time_idx, 
-                     'intrinsics': intrinsics, 'w2c': w2c, 'iter_gt_w2c_list': curr_gt_w2c}
-        if load_semantics:
-            semantic_id = semantic_id_all_frames_map[iter_time_idx]
-            semantic_color = semantic_color_all_frames_map[iter_time_idx]
-            curr_data['semantic_id'] = semantic_id
-            curr_data['semantic_color'] = semantic_color
+    # Initialize current frame data
+    # iter_time_idx = time_idx
+    # color = color_all_frames_map[iter_time_idx]
+    # depth = depth_all_frames_map[iter_time_idx]
+    # curr_gt_w2c = gt_w2c_all_frames_map[:iter_time_idx+1]
+    # curr_data = {'cam': cam, 'im': color, 'depth': depth, 'id': iter_time_idx, 
+    #                 'intrinsics': intrinsics, 'w2c': w2c, 'iter_gt_w2c_list': curr_gt_w2c}
+    # if load_semantics:
+    #     semantic_id = semantic_id_all_frames_map[iter_time_idx]
+    #     semantic_color = semantic_color_all_frames_map[iter_time_idx]
+    #     curr_data['semantic_id'] = semantic_id
+    #     curr_data['semantic_color'] = semantic_color
 
-        # Add new Gaussians to the scene based on the Silhouette
-        # if time_idx > 0:
-        #     params, variables = add_new_gaussians(params, variables, curr_data, 
-        #                                           config['train']['sil_thres'], time_idx,
-        #                                           config['mean_sq_dist_method'])
-        post_num_pts = params['means3D'].shape[0]
+    # Add new Gaussians to the scene based on the Silhouette
+    # if time_idx > 0:
+    #     params, variables = add_new_gaussians(params, variables, curr_data, 
+    #                                           config['train']['sil_thres'], time_idx,
+    #                                           config['mean_sq_dist_method'])
+    # post_num_pts = params['means3D'].shape[0]
+    # if config['use_wandb']:
+    #     wandb_run.log({"Init/Number of Gaussians": post_num_pts,
+    #                    "Init/step": wandb_time_step})
+
+    # Reset Optimizer & Learning Rates for Full Map Optimization
+    
+    
+    # Mapping
+    optimizer = initialize_optimizer(params, config['train']['lrs_mapping'], params_opt_exclude)
+    means3D_scheduler = get_expon_lr_func(lr_init=config['train']['lrs_mapping']['means3D'], 
+                                        lr_final=config['train']['lrs_mapping_means3D_final'],
+                                        lr_delay_mult=config['train']['lr_delay_mult'],
+                                        max_steps=config['train']['num_iters_mapping'])
+    if num_iters_mapping > 0:
+        progress_bar = tqdm(range(num_iters_mapping), desc=f"Mapping Time Step: {time_idx}")
+    for iter in range(num_iters_mapping):
+        # Update Learning Rates for means3D
+        updated_lr = update_learning_rate(optimizer, means3D_scheduler, iter+1)
         if config['use_wandb']:
-            wandb_run.log({"Init/Number of Gaussians": post_num_pts,
-                           "Init/step": wandb_time_step})
-
-        # Reset Optimizer & Learning Rates for Full Map Optimization
-        optimizer = initialize_optimizer(params, config['train']['lrs_mapping'], params_opt_exclude)
-        means3D_scheduler = get_expon_lr_func(lr_init=config['train']['lrs_mapping']['means3D'], 
-                                              lr_final=config['train']['lrs_mapping_means3D_final'],
-                                              lr_delay_mult=config['train']['lr_delay_mult'],
-                                              max_steps=config['train']['num_iters_mapping'])
-        
-        # Mapping
-        if (time_idx + 1) == num_frames:
-            if num_iters_mapping > 0:
-                progress_bar = tqdm(range(num_iters_mapping), desc=f"Mapping Time Step: {time_idx}")
-            for iter in range(num_iters_mapping):
-                # Update Learning Rates for means3D
-                updated_lr = update_learning_rate(optimizer, means3D_scheduler, iter+1)
+            wandb_run.log({"Learning Rate - Means3D": updated_lr})
+        # Randomly select a frame until current time step
+        iter_time_idx = random.randint(0, time_idx)
+        # Initialize Data for selected frame
+        iter_color = color_all_frames_map[iter_time_idx]
+        iter_depth = depth_all_frames_map[iter_time_idx]
+        iter_gt_w2c = gt_w2c_all_frames_map[:iter_time_idx+1]
+        iter_gs_cam = gs_cams_all_frames_map[iter_time_idx]
+        iter_data = {'cam': iter_gs_cam, 'im': iter_color, 'depth': iter_depth, 
+                        'id': iter_time_idx, 'intrinsics': map_intrinsics, 
+                        'w2c': gt_w2c_all_frames_map[iter_time_idx], 'iter_gt_w2c_list': iter_gt_w2c}
+        if load_semantics:
+            iter_data['semantic_id'] = semantic_id_all_frames_map[iter_time_idx]
+            iter_data['semantic_color'] = semantic_color_all_frames_map[iter_time_idx]
+        # Loss for current frame
+        loss, variables, losses = get_loss_gs(params, iter_data, variables, config['train']['loss_weights'],
+                                                load_semantics=load_semantics)
+        # Backprop
+        loss.backward()
+        with torch.no_grad():
+            # Gaussian-Splatting's Gradient-based Densification
+            if config['train']['use_gaussian_splatting_densification']:
+                params, variables = densify(params, variables, optimizer, iter, config['train']['densify_dict'],
+                                            params_opt_exclude)
                 if config['use_wandb']:
-                    wandb_run.log({"Learning Rate - Means3D": updated_lr})
-                # Randomly select a frame until current time step
-                iter_time_idx = random.randint(0, time_idx)
-                # Initialize Data for selected frame
-                iter_color = color_all_frames_map[iter_time_idx]
-                iter_depth = depth_all_frames_map[iter_time_idx]
-                iter_gt_w2c = gt_w2c_all_frames_map[:iter_time_idx+1]
-                iter_gs_cam = gs_cams_all_frames_map[iter_time_idx]
-                iter_data = {'cam': iter_gs_cam, 'im': iter_color, 'depth': iter_depth, 
-                             'id': iter_time_idx, 'intrinsics': map_intrinsics, 
-                             'w2c': gt_w2c_all_frames_map[iter_time_idx], 'iter_gt_w2c_list': iter_gt_w2c}
-                if load_semantics:
-                    iter_data['semantic_id'] = semantic_id_all_frames_map[iter_time_idx]
-                    iter_data['semantic_color'] = semantic_color_all_frames_map[iter_time_idx]
-                # Loss for current frame
-                loss, variables, losses = get_loss_gs(params, iter_data, variables, config['train']['loss_weights'],
-                                                      load_semantics=load_semantics)
-                # Backprop
-                loss.backward()
-                with torch.no_grad():
-                    # Gaussian-Splatting's Gradient-based Densification
-                    if config['train']['use_gaussian_splatting_densification']:
-                        params, variables = densify(params, variables, optimizer, iter, config['train']['densify_dict'],
-                                                    params_opt_exclude)
-                        if config['use_wandb']:
-                            wandb_run.log({"Number of Gaussians - Densification": params['means3D'].shape[0]})
-                    # Optimizer Update
-                    optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)
-                    # Report Progress
-                    if config['report_iter_progress']:
-                        if config['use_wandb']:
-                            report_progress(params, iter_data, iter+1, progress_bar, iter_time_idx, sil_thres=config['train']['sil_thres'], 
-                                            wandb_run=wandb_run, wandb_step=wandb_step, wandb_save_qual=config['wandb']['save_qual'],
-                                            mapping=True, load_semantics=load_semantics, online_time_idx=time_idx)
-                        else:
-                            report_progress(params, iter_data, iter+1, progress_bar, iter_time_idx, sil_thres=config['train']['sil_thres'], 
-                                            mapping=True, load_semantics=load_semantics, online_time_idx=time_idx)
-                    else:
-                        progress_bar.update(1)
-                    # Eval Params at 7K Iterations
-                    if (iter + 1) == 7000:
-                        print("Evaluating Params at 7K Iterations")
-                        eval_params = convert_params_to_store(params)
-                        output_dir = os.path.join(config["workdir"], config["run_name"])
-                        eval_dir = os.path.join(output_dir, "eval_7k")
-                        os.makedirs(eval_dir, exist_ok=True)
-                        if config['use_wandb']:
-                            eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'], wandb_run=wandb_run,
-                                 wandb_save_qual=config['wandb']['eval_save_qual'], mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True,
-                                 load_semantics=load_semantics)
-                        else:
-                            eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'],
-                                 mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True, load_semantics=load_semantics)
-            if num_iters_mapping > 0:
-                progress_bar.close()
+                    wandb_run.log({"Number of Gaussians - Densification": params['means3D'].shape[0]})
+            # Optimizer Update
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
+            # Report Progress
+            if config['report_iter_progress']:
+                if config['use_wandb']:
+                    report_progress(params, iter_data, iter+1, progress_bar, iter_time_idx, sil_thres=config['train']['sil_thres'], 
+                                    wandb_run=wandb_run, wandb_step=wandb_step, wandb_save_qual=config['wandb']['save_qual'],
+                                    mapping=True, load_semantics=load_semantics, online_time_idx=time_idx)
+                else:
+                    report_progress(params, iter_data, iter+1, progress_bar, iter_time_idx, sil_thres=config['train']['sil_thres'], 
+                                    mapping=True, load_semantics=load_semantics, online_time_idx=time_idx)
+            else:
+                progress_bar.update(1)
+            # Eval Params at 7K Iterations
+            if (iter + 1) == 7000:
+                print("Evaluating Params at 7K Iterations")
+                eval_params = convert_params_to_store(params)
+                output_dir = os.path.join(config["workdir"], config["run_name"])
+                eval_dir = os.path.join(output_dir, "eval_7k")
+                os.makedirs(eval_dir, exist_ok=True)
+                if config['use_wandb']:
+                    eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'], wandb_run=wandb_run,
+                            wandb_save_qual=config['wandb']['eval_save_qual'], mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True,
+                            load_semantics=load_semantics)
+                else:
+                    eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'],
+                            mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True, load_semantics=load_semantics)
+    if num_iters_mapping > 0:
+        progress_bar.close()
 
         # Increment WandB Step
-        if config['use_wandb']:
-            wandb_time_step += 1
+        # if config['use_wandb']:
+        #     wandb_time_step += 1
 
     output_dir = os.path.join(config["workdir"], config["run_name"])
     eval_dir = os.path.join(output_dir, "eval")

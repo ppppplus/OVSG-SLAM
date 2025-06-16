@@ -5,6 +5,15 @@ configs/local
 /results/
 /wandb/
 
+# Model checkpoints and weights
+*.pt
+*.pth
+*.ckpt
+*.t7
+*.safetensors
+*checkpoint*
+*weights*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

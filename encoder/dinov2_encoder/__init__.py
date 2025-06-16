@@ -1,0 +1,1 @@
+from .dinov2_extractor import DINOv2FeatureExtractor 

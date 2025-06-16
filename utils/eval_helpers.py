@@ -118,7 +118,7 @@ def evaluate_label_miou(pred_label, gt_label):
     return miou
 
 
-def evaluate_miou(recolored_img, gt_img):
+def origin_evaluate_miou(recolored_img, gt_img):
     """
     Input : 
         recolored_img: torch tensor of the colored semantic image, shape (C, H, W)
@@ -156,6 +156,54 @@ def evaluate_miou(recolored_img, gt_img):
     # Calculate mean IoU
     miou = sum(iou_per_color) / len(iou_per_color) if iou_per_color else 0
     return miou
+
+def evaluate_miou(recolored_img, gt_img):
+    """
+    Compute mean IoU between predicted and GT semantic segmentation images.
+    
+    Args:
+        recolored_img (torch.Tensor): Predicted colored image, shape (C, H, W), float or uint8
+        gt_img (torch.Tensor): Ground truth colored image, shape (C, H, W), float or uint8
+
+    Returns:
+        float: mean IoU over all labeled colors
+    """
+    device = gt_img.device
+
+    # Ensure both are [C, H, W] uint8 tensors in [0, 255]
+    if recolored_img.dtype != torch.uint8:
+        recolored_img = (recolored_img * 255).clamp(0, 255).byte()
+    if gt_img.dtype != torch.uint8:
+        gt_img = (gt_img * 255).clamp(0, 255).byte()
+
+    # Flatten to [N, 3]
+    gt_flat = gt_img.permute(1, 2, 0).reshape(-1, 3)
+    pred_flat = recolored_img.permute(1, 2, 0).reshape(-1, 3)
+
+    # Mask out unlabeled pixels ([0,0,0])
+    labeled_pixels = (gt_flat != torch.tensor([0, 0, 0], dtype=torch.uint8, device=device)).any(dim=1)
+    gt_flat = gt_flat[labeled_pixels]
+    pred_flat = pred_flat[labeled_pixels]
+
+    # Get unique colors (semantic classes)
+    unique_colors = torch.unique(gt_flat, dim=0)
+    iou_per_color = []
+
+    for color in unique_colors:
+        gt_mask = (gt_flat == color).all(dim=1)
+        pred_mask = (pred_flat == color).all(dim=1)
+
+        intersection = (gt_mask & pred_mask).sum().item()
+        union = (gt_mask | pred_mask).sum().item()
+
+        if union > 0:
+            iou_per_color.append(intersection / union)
+
+    # Mean IoU
+    if len(iou_per_color) == 0:
+        return 0.0
+    else:
+        return sum(iou_per_color) / len(iou_per_color)
 
 
 def evaluate_ate(gt_traj, est_traj):
@@ -244,11 +292,16 @@ def plot_rgbd_silhouette(color, depth, rastered_color, rastered_depth, presence_
     axs[1, 2].set_title("Diff Depth L1")
     
     if seg is not None:
-        rastered_seg = recolor_semantic_img(rastered_seg, seg)
+        # rastered_seg = recolor_semantic_img(rastered_seg, seg)
+        
         miou = evaluate_miou(rastered_seg, seg)
-        axs[0, 3].imshow(seg.cpu().permute(1, 2, 0))
+        viz_rastered_seg = (rastered_seg + 1) / 2.0
+        viz_seg = (seg + 1) / 2.0
+        viz_rastered_seg = torch.clip(viz_rastered_seg, 0, 1)
+        viz_seg = torch.clip(viz_seg, 0, 1)
+        axs[0, 3].imshow(viz_seg.cpu().permute(1, 2, 0))
         axs[0, 3].set_title("Ground Truth Semantic Map")
-        axs[1, 3].imshow(rastered_seg.cpu().permute(1, 2, 0))
+        axs[1, 3].imshow(viz_rastered_seg.cpu().permute(1, 2, 0))
         axs[1, 3].set_title("Rasterized Semantic Map, IOU: {:.4f}".format(miou))
         
     for ax in axs.flatten():
@@ -347,7 +400,7 @@ def report_progress(params, data, i, progress_bar, iter_time_idx, sil_thres, eve
             rastered_seg, _, _, = Renderer(raster_settings=data['cam'])(**semantic_rendervar)
             gt_seg = data['semantic_color']
             # seg_psnr = calc_psnr(seg, data['semantic_color']).mean()
-            rastered_seg = recolor_semantic_img(rastered_seg, gt_seg)
+            # rastered_seg = recolor_semantic_img(rastered_seg, gt_seg)
             miou = evaluate_miou(rastered_seg, gt_seg)
         else:
             rastered_seg = None
@@ -504,7 +557,7 @@ def eval_online(dataset, all_params, num_frames, eval_online_dir, sil_thres, map
             gt_seg = curr_data['semantic_color']
 
             # Calcualte mIoU scores
-            rastered_seg = recolor_semantic_img(rastered_seg, gt_seg)
+            # rastered_seg = recolor_semantic_img(rastered_seg, gt_seg)
             miou = evaluate_miou(rastered_seg, gt_seg)
             miou_list.append(miou)
         else:
@@ -611,7 +664,7 @@ def eval(dataset, final_params, num_frames, eval_dir, sil_thres, mapping_iters,
         if load_semantics:
             color, depth, intrinsics, pose, semantic_id, semantic_color = dataset[time_idx]
             semantic_id = semantic_id.permute(2, 0, 1) # (H, W, 1) -> (1, H, W)
-            semantic_color = semantic_color.permute(2, 0, 1) / 255 # (H, W, C) -> (C, H, W)
+            semantic_color = semantic_color.permute(2, 0, 1) # (H, W, C) -> (C, H, W)
         else:
             color, depth, intrinsics, pose = dataset[time_idx]
         gt_w2c = torch.linalg.inv(pose)
@@ -705,7 +758,7 @@ def eval(dataset, final_params, num_frames, eval_dir, sil_thres, mapping_iters,
             gt_seg = curr_data['semantic_color']
 
             # Calcualte mIoU scores
-            rastered_seg = recolor_semantic_img(rastered_seg, gt_seg)
+            # rastered_seg = recolor_semantic_img(rastered_seg, gt_seg)
             miou = evaluate_miou(rastered_seg, gt_seg)
             miou_list.append(miou)
         else:
@@ -725,6 +778,7 @@ def eval(dataset, final_params, num_frames, eval_dir, sil_thres, mapping_iters,
             cv2.imwrite(os.path.join(render_depth_dir, "gs_{:04d}.png".format(time_idx)), depth_colormap)
 
             if load_semantics:
+                viz_render_seg = (rastered_seg + 1) / 2.0 # -1~1 to 0~1
                 viz_render_seg = torch.clamp(rastered_seg, 0, 1)
                 viz_render_seg = viz_render_seg.detach().cpu().permute(1, 2, 0).numpy()
                 cv2.imwrite(os.path.join(render_seg_dir, "gs_{:04d}.png".format(time_idx)), cv2.cvtColor(viz_render_seg*255, cv2.COLOR_RGB2BGR))

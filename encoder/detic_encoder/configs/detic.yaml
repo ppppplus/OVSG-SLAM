@@ -1,0 +1,9 @@
+model_type: "swin"
+vocabulary: "lvis"
+custom_vocabulary: ""
+pred_all_class: false
+confidence_threshold: 0.3
+height: 480
+width: 640
+verbose: false
+device: "cuda"
