@@ -22,6 +22,8 @@ from datasets.gradslam_datasets import (
     ICLDataset,
     ReplicaDataset,
     ReplicaV2Dataset,
+    ReplicaCADDataset,
+    OmniDataset,
     AzureKinectDataset,
     ScannetDataset,
     Ai2thorDataset,
@@ -49,6 +51,8 @@ def get_dataset(config_dict, basedir, sequence, **kwargs):
         return ICLDataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["replica"]:
         return ReplicaDataset(config_dict, basedir, sequence, **kwargs)
+    elif config_dict["dataset_name"].lower() in ["replicacad"]:
+        return ReplicaCADDataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["replicav2"]:
         return ReplicaV2Dataset(config_dict, basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["azure", "azurekinect"]:
@@ -67,6 +71,9 @@ def get_dataset(config_dict, basedir, sequence, **kwargs):
         return ScannetPPDataset(basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["nerfcapture"]:
         return NeRFCaptureDataset(basedir, sequence, **kwargs)
+    
+    elif config_dict["dataset_name"].lower() in ["omni"]:
+        return OmniDataset(config_dict, basedir, sequence, **kwargs)
     else:
         raise ValueError(f"Unknown dataset name {config_dict['dataset_name']}")
 
@@ -422,7 +429,7 @@ def add_new_gaussians(params, params_opt_exclude, variables, curr_data, sil_thre
                       mean_sq_dist_method, device="cuda", load_semantics=False):
     # Silhouette Rendering
     transformed_pts = transform_to_frame(params, time_idx, gaussians_grad=False,
-                                         camera_grad=False, device=device)
+                                         camera_grad=False, device=device)  # [N,3]
     depth_sil_rendervar = transformed_params2depthplussilhouette(params, curr_data['w2c'],
                                                                  transformed_pts, device=device)
     depth_sil, _, _, = Renderer(raster_settings=curr_data['cam'])(**depth_sil_rendervar)
@@ -901,7 +908,7 @@ def rgbd_slam(config: dict):
                 # Get the current estimated rotation & translation
                 curr_cam_rot = F.normalize(params['cam_unnorm_rots'][..., time_idx].detach())
                 curr_cam_tran = params['cam_trans'][..., time_idx].detach()
-                curr_w2c = torch.eye(4).to(device).float()
+                curr_w2c = torch.eye(4).to(device).float()  ##
                 curr_w2c[:3, :3] = build_rotation(curr_cam_rot)
                 curr_w2c[:3, 3] = curr_cam_tran
                 # Select Keyframes for Mapping

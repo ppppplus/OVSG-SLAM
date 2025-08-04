@@ -4,6 +4,8 @@ from .dataconfig import load_dataset_config
 from .datautils import *
 from .icl import ICLDataset
 from .replica import ReplicaDataset, ReplicaV2Dataset
+from .replicacad import ReplicaCADDataset
+from .omni import OmniDataset
 from .scannet import ScannetDataset
 from .ai2thor import Ai2thorDataset
 from .realsense import RealsenseDataset

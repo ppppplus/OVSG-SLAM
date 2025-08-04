@@ -5,6 +5,7 @@ from tqdm import tqdm
 from pathlib import Path
 import torch
 from typing import Dict, Tuple, List
+from argparse import ArgumentParser
 # from detic_extract import detic_extract
 from encoder.detic_encoder.detic_extractor import DeticFeatureExtractor
 from encoder.feat_comp.feature_compression import FeatureCompressor
@@ -12,7 +13,7 @@ from affordance.vrb.vrb_afford_extract import VRBExtractor
 from affordance.vrb.vrb_afford_extract import compute_heatmap
 from sklearn.decomposition import PCA
 
-class ReplicaDatasetProcess():
+class DatasetProcess():
     def __init__(self, frames_dir: str = "data/Replica/room0/frames",
         semantic_id_dir: str = "data/Replica/room0/detic_semantic_ids",
         semantic_map_dir: str = "data/Replica/room0/detic_semantic_maps",
@@ -201,8 +202,8 @@ class ReplicaDatasetProcess():
                 semantic_ids, semantic_map, image, pred_boxes, labels = self.extract_semantic_data(input_path)
                 affordance_map = self.create_affordance_map(image, pred_boxes, labels)
                 # 保存结果
-                # np.save(semantic_id_path, semantic_ids)
-                # np.save(semantic_map_path, semantic_map)
+                np.save(semantic_id_path, semantic_ids)
+                np.save(semantic_map_path, semantic_map)
                 np.save(afford_map_path, affordance_map)
                 # print(semantic_ids, semantic_map)
                 # break
@@ -212,6 +213,14 @@ class ReplicaDatasetProcess():
                 continue
 
 if __name__ == "__main__":
-    processor = ReplicaDatasetProcess()
+    parser = ArgumentParser(description="Training script parameters")
+    parser.add_argument("-s", "--source_path", type=str, default="datasets/table/")
+    args = parser.parse_args()
+    frames_dir = os.path.join(args.source_path, "images")
+    semantic_id_dir = os.path.join(args.source_path, "detic_semantic_ids")
+    semantic_map_dir = os.path.join(args.source_path, "detic_semantic_maps")
+    afford_map_dir = os.path.join(args.source_path, "affordance_maps")
+    
+    processor = DatasetProcess(frames_dir=frames_dir, semantic_id_dir=semantic_id_dir, semantic_map_dir=semantic_map_dir, afford_map_dir=afford_map_dir)
     processor.process()
     print("Processing complete!")

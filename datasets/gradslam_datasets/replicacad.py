@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import cv2
 import imageio
+import json
 from natsort import natsorted
 
 from .basedataset import GradSLAMDataset
@@ -15,7 +16,7 @@ from . import datautils
 
 from affordance.vrb.vrb_afford_extract import VRBExtractor
 
-class ReplicaDataset(GradSLAMDataset):
+class ReplicaCADDataset(GradSLAMDataset):
     def __init__(
         self,
         config_dict,
@@ -24,8 +25,8 @@ class ReplicaDataset(GradSLAMDataset):
         stride: Optional[int] = None,
         start: Optional[int] = 0,
         end: Optional[int] = -1,
-        desired_height: Optional[int] = 480,
-        desired_width: Optional[int] = 640,
+        desired_height: Optional[int] = 600,
+        desired_width: Optional[int] = 800,
         load_semantics: Optional[bool] = False,
         load_embeddings: Optional[bool] = False,
         load_affords: Optional[bool] = False,
@@ -35,7 +36,7 @@ class ReplicaDataset(GradSLAMDataset):
         **kwargs,
     ):
         self.input_folder = os.path.join(basedir, sequence)
-        self.pose_path = os.path.join(self.input_folder, "traj.txt")
+        self.pose_path = os.path.join(self.input_folder, "transforms_train.json")
         super().__init__(
             config_dict,
             stride=stride,
@@ -53,8 +54,12 @@ class ReplicaDataset(GradSLAMDataset):
         )
 
     def get_filepaths(self):
-        color_paths = natsorted(glob.glob(f"{self.input_folder}/frames/frame*.jpg"))
-        depth_paths = natsorted(glob.glob(f"{self.input_folder}/depths/depth*.png"))
+        # color_paths = natsorted(glob.glob(f"{self.input_folder}/frames/frame*.jpg"))
+        color_paths = natsorted(
+            glob.glob(f"{self.input_folder}/images/*.jpg") + 
+            glob.glob(f"{self.input_folder}/images/*.png")
+        )
+        depth_paths = natsorted(glob.glob(f"{self.input_folder}/depth/*.png"))
         semantic_id_paths = natsorted(glob.glob(f"{self.input_folder}/detic_semantic_ids/*.npy"))
         semantic_color_paths = natsorted(glob.glob(f"{self.input_folder}/detic_semantic_maps/*.npy"))
         afford_paths = natsorted(glob.glob(f"{self.input_folder}/affordance_maps/*.npy"))
@@ -66,13 +71,11 @@ class ReplicaDataset(GradSLAMDataset):
     def load_poses(self):
         poses = []
         with open(self.pose_path, "r") as f:
-            lines = f.readlines()
-        for i in range(self.num_imgs):
-            line = lines[i]
-            c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
-            # c2w[:3, 1] *= -1
-            # c2w[:3, 2] *= -1
+            data = json.load(f)
+        for frame in data["frames"]:
+            c2w = np.array(frame["transform_matrix"])
             c2w = torch.from_numpy(c2w).float()
+            c2w[:3, 1:3] *= -1
             poses.append(c2w)
         return poses
 
@@ -124,7 +127,7 @@ class ReplicaDataset(GradSLAMDataset):
         color = self._preprocess_color(color)
         if ".png" in depth_path:
             # depth_data = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
-            depth = np.asarray(imageio.imread(depth_path), dtype=np.int64)
+            depth = np.asarray(imageio.imread(depth_path), dtype=np.uint16)
         elif ".exr" in depth_path:
             depth = readEXR_onlydepth(depth_path)
         
@@ -183,88 +186,3 @@ class ReplicaDataset(GradSLAMDataset):
             return_data = return_data + (embedding.to(self.device),) # Allow embedding to be another dtype.
 
         return return_data
-    
-class ReplicaV2Dataset(GradSLAMDataset):
-    def __init__(
-        self,
-        config_dict,
-        basedir,
-        sequence,
-        use_train_split: Optional[bool] = True,
-        stride: Optional[int] = None,
-        start: Optional[int] = 0,
-        end: Optional[int] = -1,
-        desired_height: Optional[int] = 480,
-        desired_width: Optional[int] = 640,
-        load_semantics: Optional[bool] = False,
-        load_embeddings: Optional[bool] = False,
-        embedding_dir: Optional[str] = "embeddings",
-        embedding_dim: Optional[int] = 512,
-        **kwargs,
-    ):
-        self.use_train_split = use_train_split
-        if self.use_train_split:
-            self.input_folder = os.path.join(basedir, sequence, "imap/00")
-            self.pose_path = os.path.join(self.input_folder, "traj_w_c.txt")
-        else:
-            self.train_input_folder = os.path.join(basedir, sequence, "imap/00")
-            self.train_pose_path = os.path.join(self.train_input_folder, "traj_w_c.txt")
-            self.input_folder = os.path.join(basedir, sequence, "imap/01")
-            self.pose_path = os.path.join(self.input_folder, "traj_w_c.txt")
-        super().__init__(
-            config_dict,
-            stride=stride,
-            start=start,
-            end=end,
-            desired_height=desired_height,
-            desired_width=desired_width,
-            load_semantics=load_semantics,
-            load_embeddings=load_embeddings,
-            embedding_dir=embedding_dir,
-            embedding_dim=embedding_dim,
-            **kwargs,
-        )
-
-    def get_filepaths(self):
-        if self.use_train_split:
-            color_paths = natsorted(glob.glob(f"{self.input_folder}/rgb/rgb_*.png"))
-            depth_paths = natsorted(glob.glob(f"{self.input_folder}/depth/depth_*.png"))
-        else:
-            first_train_color_path = f"{self.train_input_folder}/rgb/rgb_0.png"
-            first_train_depth_path = f"{self.train_input_folder}/depth/depth_0.png"
-            color_paths = [first_train_color_path] + natsorted(glob.glob(f"{self.input_folder}/rgb/rgb_*.png"))
-            depth_paths = [first_train_depth_path] + natsorted(glob.glob(f"{self.input_folder}/depth/depth_*.png"))
-        semantic_paths = None
-        embedding_paths = None
-        if self.load_embeddings:
-            embedding_paths = natsorted(glob.glob(f"{self.input_folder}/{self.embedding_dir}/*.pt"))
-        return color_paths, depth_paths, semantic_paths, embedding_paths
-
-    def load_poses(self):
-        poses = []
-        if not self.use_train_split:
-            with open(self.train_pose_path, "r") as f:
-                train_lines = f.readlines()
-            first_train_frame_line = train_lines[0]
-            first_train_frame_c2w = np.array(list(map(float, first_train_frame_line.split()))).reshape(4, 4)
-            first_train_frame_c2w = torch.from_numpy(first_train_frame_c2w).float()
-            poses.append(first_train_frame_c2w)
-        with open(self.pose_path, "r") as f:
-            lines = f.readlines()
-        if self.use_train_split:
-            num_poses = self.num_imgs
-        else:
-            num_poses = self.num_imgs - 1
-        for i in range(num_poses):
-            line = lines[i]
-            c2w = np.array(list(map(float, line.split()))).reshape(4, 4)
-            # c2w[:3, 1] *= -1
-            # c2w[:3, 2] *= -1
-            c2w = torch.from_numpy(c2w).float()
-            poses.append(c2w)
-        return poses
-
-    def read_embedding_from_file(self, embedding_file_path):
-        embedding = torch.load(embedding_file_path)
-        return embedding.permute(0, 2, 3, 1)  # (1, H, W, embedding_dim)
-    

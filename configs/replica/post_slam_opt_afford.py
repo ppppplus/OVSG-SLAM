@@ -5,8 +5,8 @@ seed = 0
 group_name = "Replica_postopt"
 scene_name = "room0"
 param_name = f"{scene_name}_{seed}"
-run_name = f"postopt_{param_name}"
-param_ckpt_path = f"./experiments/Replica/{param_name}/params.npz"
+run_name = f"postopt_afford_{param_name}"
+param_ckpt_path = f"./experiments/Replica_postopt/postopt_afford_{param_name}/params.npz"
 
 config = dict(
     workdir=f"./experiments/{group_name}",
@@ -77,7 +77,7 @@ config = dict(
         ),
     ),
     viz=dict(
-        render_mode='semantic_color', # ['color', 'depth', 'centers' or 'semantic_color']
+        render_mode='afford_color', # ['color', 'depth', 'centers', 'semantic_color', "afford_color"]
         offset_first_viz_cam=True, # Offsets the view camera back by 0.5 units along the view direction (For Final Recon Viz)
         show_sil=False, # Show Silhouette instead of RGB
         visualize_cams=False, # Visualize Camera Frustums and Trajectory
@@ -89,6 +89,6 @@ config = dict(
         scene_name=scene_name,
         color_dict_path="./data/Replica/color_dict.json",
         load_semantics=True, # Whether load semantic information.
-        load_affords=False
+        load_affords=True
     ),
 )

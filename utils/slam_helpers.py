@@ -245,7 +245,7 @@ def transform_to_frame(params, time_idx, gaussians_grad, camera_grad, device="cu
     Returns:
         transformed_pts: Transformed Centers of Gaussians
     """
-    # Get Frame Camera Pose
+    # Get Current Frame Camera Pose
     if camera_grad:
         cam_rot = F.normalize(params['cam_unnorm_rots'][..., time_idx])
         cam_tran = params['cam_trans'][..., time_idx]

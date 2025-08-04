@@ -13,13 +13,13 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import wandb
+from affordance.afford_transfer import gsgrad_vote
 
 from datasets.gradslam_datasets import (
     load_dataset_config,
     ICLDataset,
     ReplicaDataset,
     ReplicaCADDataset,
-    OmniDataset,
     AzureKinectDataset,
     ScannetDataset,
     Ai2thorDataset,
@@ -69,8 +69,6 @@ def get_dataset(config_dict, basedir, sequence, **kwargs):
         return ScannetPPDataset(basedir, sequence, **kwargs)
     elif config_dict["dataset_name"].lower() in ["nerfcapture"]:
         return NeRFCaptureDataset(basedir, sequence, **kwargs)
-    elif config_dict["dataset_name"].lower() in ["omni"]:
-        return OmniDataset(config_dict, basedir, sequence, **kwargs)
     else:
         raise ValueError(f"Unknown dataset name {config_dict['dataset_name']}")
 
@@ -240,6 +238,15 @@ def convert_params_to_store(params):
             params_to_store[k] = v
     return params_to_store
 
+def convert_store_to_params(params_to_store):
+    params = {}
+    for k, v in params_to_store.items():
+        if isinstance(v, np.ndarray):
+            params[k] = torch.tensor(v).cuda()
+        else:
+            params[k] = v  # 保留非张量项
+    return params
+
 
 def rgbd_slam(config: dict):
     # Print Config
@@ -285,26 +292,13 @@ def rgbd_slam(config: dict):
         num_semantic_classes = dataset_config["num_semantic_classes"]
         semantic_color_all_frames_map = []
         semantic_id_all_frames_map = []
+    if "load_affords" not in dataset_config:
+        load_affords = False
+    else:
+        load_affords = dataset_config["load_affords"]
 
     # Poses are relative to the first frame
-    mapping_dataset = get_dataset(
-        config_dict=gradslam_data_cfg,
-        basedir=dataset_config["basedir"],
-        sequence=os.path.basename(dataset_config["sequence"]),
-        start=dataset_config["start"],
-        end=dataset_config["end"],
-        stride=dataset_config["stride"],
-        desired_height=dataset_config["desired_image_height"],
-        desired_width=dataset_config["desired_image_width"],
-        device=device,
-        relative_pose=True,
-        ignore_bad=dataset_config["ignore_bad"],
-        use_train_split=dataset_config["use_train_split"],
-        load_semantics=load_semantics,
-        num_semantic_classes=num_semantic_classes,
-    )
-
-    eval_dataset = get_dataset(
+    afford_dataset = get_dataset(
         config_dict=gradslam_data_cfg,
         basedir=dataset_config["basedir"],
         sequence=os.path.basename(dataset_config["sequence"]),
@@ -318,196 +312,24 @@ def rgbd_slam(config: dict):
         ignore_bad=dataset_config["ignore_bad"],
         use_train_split=dataset_config["use_train_split"],
         load_semantics=load_semantics,
+        load_affords=load_affords,
         num_semantic_classes=num_semantic_classes,
     )
 
     num_frames = dataset_config["num_frames"]
     if num_frames == -1:
-        num_frames = len(mapping_dataset)
-    eval_num_frames = dataset_config["eval_num_frames"]
-    if eval_num_frames == -1:
-        eval_num_frames = len(eval_dataset)
-
+        num_frames = len(afford_dataset)
     # Initialize Parameters, Optimizer & Canoncial Camera parameters
     ckpt_path = config["data"]["param_ckpt_path"]
-    params, variables, optimizer, params_opt_exclude, intrinsics, \
-        w2c, cam = initialize_first_timestep_from_ckpt(ckpt_path, mapping_dataset, num_frames,
-                                                       config['train']['lrs_mapping'],
-                                                       config['mean_sq_dist_method'],
-                                                       load_semantics=load_semantics,
-                                                       device=device)
-
-    # Use the first frame coordinate
-    if load_semantics:
-        _, _, map_intrinsics, _, _, _ = mapping_dataset[0]
-    else:
-        _, _, map_intrinsics, _ = mapping_dataset[0]
-
-    # Load all RGBD frames - Mapping dataloader
-    color_all_frames_map = []
-    depth_all_frames_map = []
-    gt_w2c_all_frames_map = []
-    gs_cams_all_frames_map = []
-    for time_idx in tqdm(range(num_frames)):
-        if load_semantics:
-            color, depth, _, gt_pose, semantic_id, semantic_color = mapping_dataset[time_idx]
-            semantic_id = semantic_id.permute(2, 0, 1)
-            semantic_color = semantic_color.permute(2, 0, 1)
-            semantic_id_all_frames_map.append(semantic_id)
-            semantic_color_all_frames_map.append(semantic_color)
-        else:
-            color, depth, _, gt_pose = mapping_dataset[time_idx]
-        # Process poses
-        gt_w2c = torch.linalg.inv(gt_pose)
-        # Process RGB-D Data
-        color = color.permute(2, 0, 1) / 255
-        depth = depth.permute(2, 0, 1)
-        color_all_frames_map.append(color)
-        depth_all_frames_map.append(depth)
-        gt_w2c_all_frames_map.append(gt_w2c)
-        # Setup Gaussian Splatting Camera
-        gs_cam = setup_camera(color.shape[2], color.shape[1], 
-                              map_intrinsics.cpu().numpy(), 
-                              gt_w2c.detach().cpu().numpy(),
-                              device=device)
-        gs_cams_all_frames_map.append(gs_cam)
-    # Iterate over Scan
-    # for time_idx in tqdm(range(num_frames)):
-        # Optimization Iterations
-    num_iters_mapping = config['train']['num_iters_mapping']
-
-    # Initialize current frame data
-    # iter_time_idx = time_idx
-    # color = color_all_frames_map[iter_time_idx]
-    # depth = depth_all_frames_map[iter_time_idx]
-    # curr_gt_w2c = gt_w2c_all_frames_map[:iter_time_idx+1]
-    # curr_data = {'cam': cam, 'im': color, 'depth': depth, 'id': iter_time_idx, 
-    #                 'intrinsics': intrinsics, 'w2c': w2c, 'iter_gt_w2c_list': curr_gt_w2c}
-    # if load_semantics:
-    #     semantic_id = semantic_id_all_frames_map[iter_time_idx]
-    #     semantic_color = semantic_color_all_frames_map[iter_time_idx]
-    #     curr_data['semantic_id'] = semantic_id
-    #     curr_data['semantic_color'] = semantic_color
-
-    # Add new Gaussians to the scene based on the Silhouette
-    # if time_idx > 0:
-    #     params, variables = add_new_gaussians(params, variables, curr_data, 
-    #                                           config['train']['sil_thres'], time_idx,
-    #                                           config['mean_sq_dist_method'])
-    # post_num_pts = params['means3D'].shape[0]
-    # if config['use_wandb']:
-    #     wandb_run.log({"Init/Number of Gaussians": post_num_pts,
-    #                    "Init/step": wandb_time_step})
-
-    # Reset Optimizer & Learning Rates for Full Map Optimization
-    
-    
-    # Mapping
-    optimizer = initialize_optimizer(params, config['train']['lrs_mapping'], params_opt_exclude)
-    means3D_scheduler = get_expon_lr_func(lr_init=config['train']['lrs_mapping']['means3D'], 
-                                        lr_final=config['train']['lrs_mapping_means3D_final'],
-                                        lr_delay_mult=config['train']['lr_delay_mult'],
-                                        max_steps=config['train']['num_iters_mapping'])
-    if num_iters_mapping > 0:
-        progress_bar = tqdm(range(num_iters_mapping), desc=f"Mapping Time Step: {time_idx}")
-    for iter in range(num_iters_mapping):
-        # Update Learning Rates for means3D
-        updated_lr = update_learning_rate(optimizer, means3D_scheduler, iter+1)
-        if config['use_wandb']:
-            wandb_run.log({"Learning Rate - Means3D": updated_lr})
-        # Randomly select a frame until current time step
-        iter_time_idx = random.randint(0, time_idx)
-        # Initialize Data for selected frame
-        iter_color = color_all_frames_map[iter_time_idx]
-        iter_depth = depth_all_frames_map[iter_time_idx]
-        iter_gt_w2c = gt_w2c_all_frames_map[:iter_time_idx+1]
-        iter_gs_cam = gs_cams_all_frames_map[iter_time_idx]
-        iter_data = {'cam': iter_gs_cam, 'im': iter_color, 'depth': iter_depth, 
-                        'id': iter_time_idx, 'intrinsics': map_intrinsics, 
-                        'w2c': gt_w2c_all_frames_map[iter_time_idx], 'iter_gt_w2c_list': iter_gt_w2c}
-        if load_semantics:
-            iter_data['semantic_id'] = semantic_id_all_frames_map[iter_time_idx]
-            iter_data['semantic_color'] = semantic_color_all_frames_map[iter_time_idx]
-        # Loss for current frame
-        loss, variables, losses = get_loss_gs(params, iter_data, variables, config['train']['loss_weights'],
-                                                load_semantics=load_semantics)
-        # Backprop
-        loss.backward()
-        with torch.no_grad():
-            # Gaussian-Splatting's Gradient-based Densification
-            if config['train']['use_gaussian_splatting_densification']:
-                params, variables = densify(params, variables, optimizer, iter, config['train']['densify_dict'],
-                                            params_opt_exclude)
-                if config['use_wandb']:
-                    wandb_run.log({"Number of Gaussians - Densification": params['means3D'].shape[0]})
-            # Optimizer Update
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-            # Report Progress
-            if config['report_iter_progress']:
-                if config['use_wandb']:
-                    report_progress(params, iter_data, iter+1, progress_bar, iter_time_idx, sil_thres=config['train']['sil_thres'], 
-                                    wandb_run=wandb_run, wandb_step=wandb_step, wandb_save_qual=config['wandb']['save_qual'],
-                                    mapping=True, load_semantics=load_semantics, online_time_idx=time_idx)
-                else:
-                    report_progress(params, iter_data, iter+1, progress_bar, iter_time_idx, sil_thres=config['train']['sil_thres'], 
-                                    mapping=True, load_semantics=load_semantics, online_time_idx=time_idx)
-            else:
-                progress_bar.update(1)
-            # Eval Params at 7K Iterations
-            if (iter + 1) == 7000:
-                print("Evaluating Params at 7K Iterations")
-                eval_params = convert_params_to_store(params)
-                output_dir = os.path.join(config["workdir"], config["run_name"])
-                eval_dir = os.path.join(output_dir, "eval_7k")
-                os.makedirs(eval_dir, exist_ok=True)
-                if config['use_wandb']:
-                    eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'], wandb_run=wandb_run,
-                            wandb_save_qual=config['wandb']['eval_save_qual'], mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True,
-                            load_semantics=load_semantics)
-                else:
-                    eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'],
-                            mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True, load_semantics=load_semantics)
-    if num_iters_mapping > 0:
-        progress_bar.close()
-
-        # Increment WandB Step
-        # if config['use_wandb']:
-        #     wandb_time_step += 1
-
+    params = dict(np.load(ckpt_path, allow_pickle=True))
+    params = convert_store_to_params(params)
+    vote_np = gsgrad_vote(afford_dataset, params, num_frames, device="cuda")
     output_dir = os.path.join(config["workdir"], config["run_name"])
-    eval_dir = os.path.join(output_dir, "eval")
-    os.makedirs(eval_dir, exist_ok=True)
-
-    # Evaluate Final Parameters
-    with torch.no_grad():
-        eval_params = convert_params_to_store(params)
-        if config['use_wandb']:
-            eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'], wandb_run=wandb_run,
-                 wandb_save_qual=config['wandb']['eval_save_qual'], mapping_iters=config["train"]["num_iters_mapping"],
-                 add_new_gaussians=True, load_semantics=load_semantics)
-        else:
-            eval(eval_dataset, eval_params, eval_num_frames, eval_dir, sil_thres=config['train']['sil_thres'],
-                 mapping_iters=config["train"]["num_iters_mapping"], add_new_gaussians=True, load_semantics=load_semantics)
-
-    # Add Camera Parameters to Save them
-    params = eval_params
-    params['timestep'] = variables['timestep']
-    params['intrinsics'] = map_intrinsics.detach().cpu().numpy()
-    params['w2c'] = w2c.detach().cpu().numpy()
-    params['org_width'] = dataset_config["desired_image_width"]
-    params['org_height'] = dataset_config["desired_image_height"]
-    params['gt_w2c_all_frames'] = []
-    for gt_w2c_tensor in gt_w2c_all_frames_map:
-        params['gt_w2c_all_frames'].append(gt_w2c_tensor.detach().cpu().numpy())
-    params['gt_w2c_all_frames'] = np.stack(params['gt_w2c_all_frames'], axis=0)
-    
+    # np.save(os.path.join(output_dir, "vote.npy"), vote_np)
+    # params = params
+    params["vote"] = vote_np
     # Save Parameters
     save_params(params, output_dir)
-
-    # Close WandB Run
-    if config['use_wandb']:
-        wandb.finish()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -4,6 +4,7 @@ configs/local
 /experiments/
 /results/
 /wandb/
+/my_scripts/
 
 # Model checkpoints and weights
 *.pt

@@ -1,21 +1,19 @@
 import os
 from os.path import join as p_join
 
-scenes = ["room0", "room1", "room2", "office0", "office1", "office2",
-          "office3", "office4", "apartment_0", "apartment_1",
-          "apartment_2", "frl_apartment_0", "frl_apartment_4"]
+scenes = ["ob_test", "ob_1", "ob_2", "ob_3"]
 
 primary_device="cuda:0"
 seed = 0
-scene_name = "room0"
+scene_name = "ob_5"
 
 map_every = 1
 keyframe_every = 5
-mapping_window_size = 24
-tracking_iters = 40
-mapping_iters = 60
+mapping_window_size = 20
+tracking_iters = 100
+mapping_iters = 40
 
-group_name = "Replica"
+group_name = "Omni"
 run_name = f"{scene_name}_{seed}"
 
 config = dict(
@@ -46,11 +44,11 @@ config = dict(
         eval_save_qual=True,
     ),
     data=dict(
-        basedir="./data/Replica",
-        gradslam_data_cfg="./configs/data/replica.yaml",
+        basedir="./data/Omni",
+        gradslam_data_cfg="./configs/data/omni.yaml",
         sequence=scene_name,
-        desired_image_height=680,
-        desired_image_width=1200,
+        desired_image_height=720,
+        desired_image_width=1280,
         start=0,
         end=-1,
         stride=1,
@@ -120,7 +118,7 @@ config = dict(
             start_after=500,
             remove_big_after=3000,
             stop_after=5000,
-            densify_every=100,
+            densify_every=500,
             grad_thresh=0.0002,
             num_to_split_into=2,
             removal_opacity_threshold=0.005,
@@ -140,6 +138,6 @@ config = dict(
         enter_interactive_post_online=True, # Enter Interactive Mode after Online Recon Viz
         scene_name=scene_name,
         load_semantics=True, # Whether load semantic information
-        load_affords=False,
+        load_affords=False
     ),
 )

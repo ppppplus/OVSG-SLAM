@@ -13,10 +13,10 @@ from affordance.vrb.vrb_afford_extract import compute_heatmap
 from sklearn.decomposition import PCA
 
 class ReplicaDatasetProcess():
-    def __init__(self, frames_dir: str = "data/Replica/room0/frames",
-        semantic_id_dir: str = "data/Replica/room0/detic_semantic_ids",
-        semantic_map_dir: str = "data/Replica/room0/detic_semantic_maps",
-        afford_map_dir: str = "data/Replica/room0/affordance_maps"
+    def __init__(self, frames_dir: str = "data/ReplicaCAD/apt_1_start/frames",
+        semantic_id_dir: str = "data/ReplicaCAD/apt_1_start/detic_semantic_ids",
+        semantic_map_dir: str = "data/ReplicaCAD/apt_1_start/detic_semantic_maps",
+        afford_map_dir: str = "data/ReplicaCAD/apt_1_start/affordance_maps" 
         ) -> None:
 
         self.detic_processor = DeticFeatureExtractor()
@@ -201,8 +201,8 @@ class ReplicaDatasetProcess():
                 semantic_ids, semantic_map, image, pred_boxes, labels = self.extract_semantic_data(input_path)
                 affordance_map = self.create_affordance_map(image, pred_boxes, labels)
                 # 保存结果
-                # np.save(semantic_id_path, semantic_ids)
-                # np.save(semantic_map_path, semantic_map)
+                np.save(semantic_id_path, semantic_ids)
+                np.save(semantic_map_path, semantic_map)
                 np.save(afford_map_path, affordance_map)
                 # print(semantic_ids, semantic_map)
                 # break

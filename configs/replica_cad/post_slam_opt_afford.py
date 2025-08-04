@@ -2,11 +2,11 @@ from os.path import join as p_join
 
 primary_device = "cuda:0"
 seed = 0
-group_name = "Replica_postopt"
-scene_name = "room0"
+group_name = "ReplicaCAD_postopt"
+scene_name = "apt_1_start"
 param_name = f"{scene_name}_{seed}"
-run_name = f"postopt_{param_name}"
-param_ckpt_path = f"./experiments/Replica/{param_name}/params.npz"
+run_name = f"postopt_afford_{param_name}"
+param_ckpt_path = f"./experiments/ReplicaCAD_postopt/postopt_afford_{param_name}/params.npz"
 
 config = dict(
     workdir=f"./experiments/{group_name}",
@@ -25,11 +25,11 @@ config = dict(
         eval_save_qual=True,
     ),
     data=dict(
-        basedir="./data/Replica",
-        gradslam_data_cfg="./configs/data/replica.yaml",
+        basedir="./data/ReplicaCAD",
+        gradslam_data_cfg="./configs/data/replica_cad.yaml",
         sequence=scene_name,
-        desired_image_height=680,
-        desired_image_width=1200,
+        desired_image_height=600,
+        desired_image_width=800,
         start=0,
         end=-1,
         stride=20,
@@ -77,11 +77,11 @@ config = dict(
         ),
     ),
     viz=dict(
-        render_mode='semantic_color', # ['color', 'depth', 'centers' or 'semantic_color']
+        render_mode='color', # ['color', 'depth', 'centers', 'semantic_color', "afford_color"]
         offset_first_viz_cam=True, # Offsets the view camera back by 0.5 units along the view direction (For Final Recon Viz)
         show_sil=False, # Show Silhouette instead of RGB
         visualize_cams=False, # Visualize Camera Frustums and Trajectory
-        viz_w=840, viz_h=476,
+        viz_w=800, viz_h=600,
         viz_near=0.01, viz_far=100.0,
         view_scale=2,
         viz_fps=5, # FPS for Online Recon Viz
@@ -89,6 +89,6 @@ config = dict(
         scene_name=scene_name,
         color_dict_path="./data/Replica/color_dict.json",
         load_semantics=True, # Whether load semantic information.
-        load_affords=False
+        load_affords=True
     ),
 )

@@ -2,11 +2,11 @@ from os.path import join as p_join
 
 primary_device = "cuda:0"
 seed = 0
-group_name = "Replica_postopt"
-scene_name = "room0"
+group_name = "Omni_postopt"
+scene_name = "ob_1"
 param_name = f"{scene_name}_{seed}"
 run_name = f"postopt_{param_name}"
-param_ckpt_path = f"./experiments/Replica/{param_name}/params.npz"
+param_ckpt_path = f"./experiments/Omni/{param_name}/params.npz"
 
 config = dict(
     workdir=f"./experiments/{group_name}",
@@ -25,14 +25,14 @@ config = dict(
         eval_save_qual=True,
     ),
     data=dict(
-        basedir="./data/Replica",
-        gradslam_data_cfg="./configs/data/replica.yaml",
+        basedir="./data/Omni",
+        gradslam_data_cfg="./configs/data/omni.yaml",
         sequence=scene_name,
-        desired_image_height=680,
-        desired_image_width=1200,
+        desired_image_height=720,
+        desired_image_width=1280,
         start=0,
-        end=-1,
-        stride=20,
+        end=30,
+        stride=30,
         num_frames=-1, # Set to -1 to use all frames
         eval_stride=5,
         eval_num_frames=-1, # Set to -1 to eval all frames
@@ -42,7 +42,7 @@ config = dict(
         num_semantic_classes=101
     ),
     train=dict(
-        num_iters_mapping=15000,
+        num_iters_mapping=5000,
         sil_thres=0.5, # For Addition of new Gaussians & Visualization
         use_sil_for_loss=True, # Use Silhouette for Loss during Tracking
         loss_weights=dict(
@@ -77,7 +77,7 @@ config = dict(
         ),
     ),
     viz=dict(
-        render_mode='semantic_color', # ['color', 'depth', 'centers' or 'semantic_color']
+        render_mode='color', # ['color', 'depth', 'centers' or 'semantic_color']
         offset_first_viz_cam=True, # Offsets the view camera back by 0.5 units along the view direction (For Final Recon Viz)
         show_sil=False, # Show Silhouette instead of RGB
         visualize_cams=False, # Visualize Camera Frustums and Trajectory

@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 import wandb
+from affordance.afford_transfer import gsgrad_vote
 
 from datasets.gradslam_datasets import (
     load_dataset_config,

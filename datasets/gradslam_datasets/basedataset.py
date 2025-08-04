@@ -117,10 +117,11 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         dtype=torch.float,
         load_semantics: bool = False,
         load_embeddings: bool = False,
+        load_affords: bool = False,
         num_semantic_classes: int = 0,
         embedding_dir: str = "feat_lseg_240_320",
         embedding_dim: int = 512,
-        relative_pose: bool = True,  # If True, the pose is relative to the first frame
+        relative_pose: bool = True,  # If True, the pose should be preprocessed to be relative to the first frame
         **kwargs,
     ):
         super().__init__()
@@ -147,6 +148,7 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         self.load_semantics = load_semantics
         self.num_semantic_classes = num_semantic_classes
         self.load_embeddings = load_embeddings
+        self.load_affords = load_affords
         self.embedding_dir = embedding_dir
         self.embedding_dim = embedding_dim
         self.relative_pose = relative_pose
@@ -171,7 +173,7 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         if "crop_edge" in config_dict["camera_params"].keys():
             self.crop_edge = config_dict["camera_params"]["crop_edge"]
 
-        self.color_paths, self.depth_paths, self.semantic_id_paths, self.semantic_color_paths, self.embedding_paths = self.get_filepaths()
+        self.color_paths, self.depth_paths, self.semantic_id_paths, self.semantic_color_paths, self.afford_paths, self.embedding_paths = self.get_filepaths()
         if len(self.color_paths) != len(self.depth_paths):
             raise ValueError("Number of color and depth images must be the same.")
         if self.load_semantics:
@@ -179,9 +181,13 @@ class GradSLAMDataset(torch.utils.data.Dataset):
                 raise ValueError("Number of semantic ids images and depth images must be the same.")
             if len(self.semantic_color_paths) != len(self.color_paths):
                 raise ValueError("Number of semantic color images and depth images must be the same.")
+            if self.load_affords:
+                if len(self.color_paths) != len(self.afford_paths):
+                    raise ValueError("Mismatch between number of color images and number of affordance files.")
         if self.load_embeddings:
             if len(self.color_paths) != len(self.embedding_paths):
                 raise ValueError("Mismatch between number of color images and number of embedding files.")
+        
         self.num_imgs = len(self.color_paths)
         self.poses = self.load_poses()
 
@@ -193,8 +199,11 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         if self.load_semantics:
             self.semantic_id_paths = self.semantic_id_paths[self.start : self.end : stride]
             self.semantic_color_paths = self.semantic_color_paths[self.start : self.end : stride]
+            if self.load_affords:
+                self.afford_paths = self.afford_paths[self.start : self.end : stride]
         if self.load_embeddings:
             self.embedding_paths = self.embedding_paths[self.start : self.end : stride]
+        
         self.poses = self.poses[self.start : self.end : stride]
         # Tensor of retained indices (indices of frames and poses that were retained)
         self.retained_inds = torch.arange(self.num_imgs)[self.start : self.end : stride]
@@ -316,6 +325,29 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         if self.channels_first:
             semantic_color = datautils.channels_first(semantic_color)
         return semantic_color
+    
+    def _preprocess_affordmap(self, affordmap: np.ndarray):
+        r"""Preprocesses the semantic colors by resizing, adding channel dimension. Optionally
+        converts depth from channels last :math:`(H, W, 3)` to channels first :math:`(3, H, W)` representation.
+
+        Args:
+            semantic_labels (np.ndarray): Raw semantic image
+
+        Returns:
+            np.ndarray: Preprocessed semantic labels
+
+        Shape:
+            - semantic_labels: :math:`(H_\text{old}, W_\text{old})`
+            - Output: :math:`(H, W, 3)` if `self.channels_first == False`, else :math:`(3, H, W)`.
+        """
+        affordmap = cv2.resize(
+            affordmap,
+            (self.desired_width, self.desired_height),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        if self.channels_first:
+            affordmap = datautils.channels_first(affordmap)
+        return affordmap
 
     def _preprocess_poses(self, poses: torch.Tensor):
         r"""Preprocesses the poses by setting first pose in a sequence to identity and computing the relative
@@ -376,6 +408,10 @@ class GradSLAMDataset(torch.utils.data.Dataset):
             semantic_color = np.asarray(imageio.imread(semantic_color_path), dtype=float)
             semantic_color = self._preprocess_semantic_color(semantic_color)
             semantic_color = torch.from_numpy(semantic_color)
+            if self.load_affords:
+                afford_path = self.afford_paths[index]
+                affordmap = np.load(afford_path)
+                affordmap = torch.from_numpy(affordmap)
 
         K = as_intrinsics_matrix([self.fx, self.fy, self.cx, self.cy])
         if self.distortion is not None:
@@ -404,6 +440,8 @@ class GradSLAMDataset(torch.utils.data.Dataset):
         if self.load_semantics:
             return_data = return_data + (semantic_id.to(self.device),
                                          semantic_color.to(self.device).type(self.dtype)) # semantic_id has int dtype.
+            if self.load_affords:
+                return_data = return_data + (affordmap.to(self.device).type(self.dtype),)
         if self.load_embeddings:
             embedding = self.read_embedding_from_file(self.embedding_paths[index])
             return_data = return_data + (embedding.to(self.device),) # Allow embedding to be another dtype.

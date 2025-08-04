@@ -6,7 +6,7 @@ matplotlib.use('TkAgg')
 import numpy as np
 
 
-img = cv2.imread("/home/ubuntu/TJH/Work/aff_ws/SGS-SLAM/data/afford/sq.jpg")
+img = cv2.imread("/home/ubuntu/TJH/Work/aff_ws/SGS-SLAM/affordance/vrb/kitchen.jpeg")
 print(img.shape)
 
 vrb_extractor = VRBExtractor()

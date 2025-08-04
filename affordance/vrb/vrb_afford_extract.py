@@ -87,7 +87,6 @@ class VRBExtractor(BaseAffordExtractor):
         # return {"affordance_map": im_out}
         contact_points = []
         trajectories = []
-        mixtures = []
         inp_img = Image.fromarray(image)
         inp_img = self.transform(inp_img).unsqueeze(0).to(torch.device("cuda:0"))
         gm = GaussianMixture(n_components=3, covariance_type="diag")
@@ -106,7 +105,6 @@ class VRBExtractor(BaseAffordExtractor):
             centers.append(sm)
             trajs.append(ic[0, 2:])
         gm.fit(np.vstack(centers))
-        mixtures.append(sm)
         cp, indx = gm.sample(50)
         x2, y2 = np.vstack(trajs)[np.random.choice(len(trajs))]
         dx, dy = (
@@ -149,4 +147,37 @@ class VRBExtractor(BaseAffordExtractor):
         result_img = np.frombuffer(canvas.tostring_rgb(), dtype='uint8')
         result_img = result_img.reshape(int(height), int(width), 3)
         return result_img
-        
+
+    def extract_pts_trajs(self, image: np.ndarray, xylist: List[float]) -> Dict[str, Any]:
+        if image.shape[0] == 0 or image.shape[1] == 0:
+            raise ValueError("Error: The image has invalid dimensions (height or width is zero).")
+
+        inp_img = Image.fromarray(image)
+        inp_img = self.transform(inp_img).unsqueeze(0).to(torch.device("cuda:0"))
+        gm = GaussianMixture(n_components=3, covariance_type="diag")
+        centers = []
+        trajs = []
+        traj_scale = 0.1
+        with torch.no_grad():
+            ic, pc = self.affVRBnet.inference(inp_img, None, None)
+            # pc = pc.cpu().numpy()
+            # ic = ic.cpu().numpy()
+            pc = pc.to(torch.float32).cpu().numpy()
+            ic = ic.to(torch.float32).cpu().numpy()
+            i = 0
+            w, h = image.shape[:2]
+            sm = pc[i, 0] * np.array([h, w])
+            centers.append(sm)
+            trajs.append(ic[0, 2:])
+        gm.fit(np.vstack(centers))
+        cp, indx = gm.sample(50)
+        x2, y2 = np.vstack(trajs)[np.random.choice(len(trajs))]
+        dx, dy = (
+            np.array([x2, y2]) * np.array([h, w])
+            + np.random.randn(2) * traj_scale
+        )
+        adjusted_cp = np.array([xylist[1], xylist[0]]) + cp
+
+        return {"contact_points": adjusted_cp, "trajectories": [xylist[2], xylist[3], dx, dy]}
+
+

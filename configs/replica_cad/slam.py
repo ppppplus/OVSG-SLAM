@@ -1,21 +1,19 @@
 import os
 from os.path import join as p_join
 
-scenes = ["room0", "room1", "room2", "office0", "office1", "office2",
-          "office3", "office4", "apartment_0", "apartment_1",
-          "apartment_2", "frl_apartment_0", "frl_apartment_4"]
+scenes = ["apt_1", "apt_test"]
 
 primary_device="cuda:0"
-seed = 0
-scene_name = "room0"
+seed = 2
+scene_name = "apt_test"
 
 map_every = 1
 keyframe_every = 5
-mapping_window_size = 24
+mapping_window_size = 10
 tracking_iters = 40
 mapping_iters = 60
 
-group_name = "Replica"
+group_name = "ReplicaCAD"
 run_name = f"{scene_name}_{seed}"
 
 config = dict(
@@ -46,11 +44,11 @@ config = dict(
         eval_save_qual=True,
     ),
     data=dict(
-        basedir="./data/Replica",
-        gradslam_data_cfg="./configs/data/replica.yaml",
+        basedir="./data/ReplicaCAD",
+        gradslam_data_cfg="./configs/data/replica_cad.yaml",
         sequence=scene_name,
-        desired_image_height=680,
-        desired_image_width=1200,
+        desired_image_height=600,
+        desired_image_width=800,
         start=0,
         end=-1,
         stride=1,
@@ -59,7 +57,7 @@ config = dict(
         num_semantic_classes=101
     ),
     tracking=dict(
-        use_gt_poses=False, # Use GT Poses for Tracking
+        use_gt_poses=True, # Use GT Poses for Tracking
         forward_prop=True, # Forward Propagate Poses
         num_iters=tracking_iters,
         use_sil_for_loss=True,
@@ -133,13 +131,13 @@ config = dict(
         offset_first_viz_cam=True, # Offsets the view camera back by 0.5 units along the view direction (For Final Recon Viz)
         show_sil=False, # Show Silhouette instead of RGB
         visualize_cams=False, # Visualize Camera Frustums and Trajectory
-        viz_w=600, viz_h=340,
+        viz_w=800, viz_h=600,
         viz_near=0.01, viz_far=100.0,
         view_scale=2,
         viz_fps=5, # FPS for Online Recon Viz
         enter_interactive_post_online=True, # Enter Interactive Mode after Online Recon Viz
         scene_name=scene_name,
         load_semantics=True, # Whether load semantic information
-        load_affords=False,
+        load_affords=False
     ),
 )

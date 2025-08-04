@@ -68,8 +68,36 @@ def load_scene_data(scene_path):
 
     return params, all_w2cs
 
+def calc_afford_color_batched(rgb_colors, vote, cmap_name='plasma', min_alpha=0.8, batch_size=1000):
+    """
+    大数据量时使用分批处理计算加权颜色
+    """
+    N = rgb_colors.shape[0]
+    new_colors = torch.zeros_like(rgb_colors)
 
-def get_rendervars(params, w2c, curr_timestep, load_semantics=False):
+    for start in range(0, N, batch_size):
+        end = min(start + batch_size, N)
+        rc_batch = rgb_colors[start:end]
+        vote_batch = vote[start:end]
+
+        vote_norm = (vote_batch - vote_batch.min()) / (vote_batch.max() - vote_batch.min() + 1e-6)
+        vote_norm_np = vote_norm.detach().cpu().numpy()
+        vote_scalar = np.linalg.norm(vote_norm_np, axis=1)  # shape [B]
+
+        cmap = plt.get_cmap(cmap_name)
+        cmap_colors_np = cmap(vote_scalar)[:, :3]
+        cmap_colors = torch.from_numpy(cmap_colors_np).to(rc_batch.device, dtype=rc_batch.dtype)
+
+        alpha = vote_norm * (1 - min_alpha) + min_alpha
+        # alpha = alpha.unsqueeze(1)
+
+        blended = (1 - alpha) * rc_batch + alpha * cmap_colors
+        new_colors[start:end] = blended
+
+    return new_colors
+
+
+def get_rendervars(params, w2c, curr_timestep, load_semantics=False, load_affords=False):
     params_timesteps = params['timestep']
     selected_params_idx = params_timesteps <= curr_timestep
     keys = [k for k in params.keys() if
@@ -107,6 +135,16 @@ def get_rendervars(params, w2c, curr_timestep, load_semantics=False):
             'scales': torch.exp(torch.tile(selected_params['log_scales'], (1, 3))),
             'means2D': torch.zeros_like(selected_params['means3D'], device="cuda")
         }
+        if load_affords:
+            semantic_rendervar = {
+                'means3D': transformed_pts,
+                'colors_precomp': calc_afford_color_batched(selected_params['rgb_colors'], selected_params['vote']),
+                # 'vote': selected_params['vote'],
+                'rotations': torch.nn.functional.normalize(selected_params['unnorm_rotations']),
+                'opacities': torch.sigmoid(selected_params['logit_opacities']),
+                'scales': torch.exp(torch.tile(selected_params['log_scales'], (1, 3))),
+                'means2D': torch.zeros_like(selected_params['means3D'], device="cuda")
+            }
     else:
         semantic_rendervar = None
 
@@ -205,9 +243,11 @@ def visualize(scene_path, cfg):
                       visible=True)
 
     load_semantics = cfg['load_semantics']
+    load_affords = cfg["load_affords"]
     scene_data, scene_depth_data, scene_semantic_data = get_rendervars(params, first_frame_w2c,
                                                                        curr_timestep=0,
-                                                                       load_semantics=load_semantics)
+                                                                       load_semantics=load_semantics,
+                                                                       load_affords=load_affords)
     im, depth, sil = render(first_frame_w2c, k, scene_data, scene_depth_data, cfg)
     init_pts, init_cols = rgbd2pcd(im, depth, first_frame_w2c, k, cfg)
     pcd = o3d.geometry.PointCloud()
@@ -303,7 +343,8 @@ def visualize(scene_path, cfg):
 
         scene_data, scene_depth_data, scene_semantic_data = get_rendervars(params, view_w2c,
                                                                            curr_timestep=curr_timestep,
-                                                                           load_semantics=load_semantics)
+                                                                           load_semantics=load_semantics,
+                                                                           load_affords=load_affords)
         if cfg['render_mode'] == 'centers':
             pts = o3d.utility.Vector3dVector(scene_data['means3D'].contiguous().double().cpu().numpy())
             cols = o3d.utility.Vector3dVector(scene_data['colors_precomp'].contiguous().double().cpu().numpy())
@@ -314,6 +355,11 @@ def visualize(scene_path, cfg):
             if cfg['show_sil']:
                 seg = (1-sil).repeat(3, 1, 1)
             pts, cols = rgbd2pcd(viz_seg, depth, view_w2c, k, cfg)
+        elif cfg['render_mode'] == 'afford_color':
+            im, depth, sil = render(view_w2c, k, scene_semantic_data, scene_depth_data, cfg)
+            if cfg['show_sil']:
+                seg = (1-sil).repeat(3, 1, 1)
+            pts, cols = rgbd2pcd(im, depth, view_w2c, k, cfg)
         else:
             im, depth, sil = render(view_w2c, k, scene_data, scene_depth_data, cfg)
             if cfg['show_sil']:
