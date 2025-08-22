@@ -1,16 +1,16 @@
 import os
 from os.path import join as p_join
 
-scenes = ["ob_test", "ob_1", "ob_2", "ob_3"]
+scenes = ["ob_1_end", "ob_1", "ob_2", "ob_3"]
 
 primary_device="cuda:0"
 seed = 0
-scene_name = "ob_5"
+scene_name = "ob_1_end"
 
 map_every = 1
 keyframe_every = 5
 mapping_window_size = 20
-tracking_iters = 100
+tracking_iters = 50
 mapping_iters = 40
 
 group_name = "Omni"
@@ -50,14 +50,14 @@ config = dict(
         desired_image_height=720,
         desired_image_width=1280,
         start=0,
-        end=-1,
+        end=1,
         stride=1,
         num_frames=-1, # Set to -1 to use all frames
         load_semantics=True,
         num_semantic_classes=101
     ),
     tracking=dict(
-        use_gt_poses=False, # Use GT Poses for Tracking
+        use_gt_poses=True, # Use GT Poses for Tracking
         forward_prop=True, # Forward Propagate Poses
         num_iters=tracking_iters,
         use_sil_for_loss=True,

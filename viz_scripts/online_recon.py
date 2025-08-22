@@ -389,7 +389,7 @@ def visualize(scene_path, cfg):
             pts = o3d.utility.Vector3dVector(scene_data['means3D'].contiguous().double().cpu().numpy())
             cols = o3d.utility.Vector3dVector(scene_data['colors_precomp'].contiguous().double().cpu().numpy())
         elif cfg['render_mode'] == 'semantic_color':
-            seg, depth, sil = render(w2c, k, scene_data, scene_semantic_data, cfg)
+            seg, depth, sil = render(w2c, k, scene_semantic_data, scene_depth_data, cfg)
             if cfg['show_sil']:
                 seg = (1-sil).repeat(3, 1, 1)
             pts, cols = rgbd2pcd(seg, depth, w2c, k, cfg)
