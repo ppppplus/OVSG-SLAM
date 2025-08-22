@@ -23,8 +23,34 @@ This repository is a customized extension of [SGS-SLAM](https://github.com/YourR
 
 ---
 
+## ⚙️ Environment Setup
+
+   ```bash
+   conda create -n sgs-slam python=3.9
+   conda activate sgs-slam
+   conda install -c "nvidia/label/cuda-11.8.0" cuda-toolkit
+   conda install pytorch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 cudatoolkit=11.8 pytorch-cuda=11.8 -c pytorch -c nvidia
+   pip install -r requirements.txt
+   ```
+For Detic’s open-vocabulary features, please follow the official installation instructions:
+👉 [Detic Installation Guide](https://github.com/facebookresearch/Detic/tree/main)
+After creating the conda environment above, install the required packages listed in Detic’s documentation (e.g., Detectron2, fvcore, iopath, pycocotools, etc.).
+
+---
+
 ## 🚀 Running on Replica Dataset
 
+### 0. Download pre-trained models
+- Detic models
+   ```bash
+   cd encoder/detic_encoder
+   mkdir models
+   wget https://dl.fbaipublicfiles.com/detic/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth -O models/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth
+   ```
+   Download more pre-trained models [here](https://github.com/facebookresearch/Detic/blob/main/docs/MODEL_ZOO.md#real-time-models) and put them into `encoder/detic_encoder/models`.
+
+- Feature compression model
+   Download from [Google Drive](https://drive.google.com/drive/folders/1rRhz_PoTIwkmJ2Tyfua3tW0wbo_re6W7?usp=sharing) and put it under `encoder/feat_comp/`.
 ### 1. Preprocess the Replica data:
 
 ```bash
@@ -60,7 +86,7 @@ python viz_scripts/online_recon.py configs/replica/slam.py
 ## ✅ TODO List
 
 - [x] Integrate open-vocabulary detection module (Detic)
-- [ ] Decouple and modularize the tracking (pose estimation) module
+- [x] Decouple and modularize the tracking (pose estimation) module
 - [ ] Add and refine affordance segmentation channel in 3DGS
 
 ---
